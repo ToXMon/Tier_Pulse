@@ -8,6 +8,9 @@
 *.Rproj.user/
 .Rproj.user/
 
+# ShinyApps.io deployment
+rsconnect/
+
 # OS
 .DS_Store
 Thumbs.db

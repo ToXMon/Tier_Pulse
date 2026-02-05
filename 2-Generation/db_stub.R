@@ -10,6 +10,10 @@ library(lubridate)
 # Global in-memory storage (will be initialized by init_mock_data())
 .mock_data <- new.env()
 
+# Special flag and storage for stub mode
+.stub_mode <- TRUE
+.last_insert_id <- NULL  # Store last inserted ID for RETURNING emulation
+
 #' Initialize mock data storage
 init_mock_data <- function() {
   # Metric definitions (from seed.R)
@@ -138,6 +142,40 @@ disconnect_db <- function(con) {
 }
 
 db_read <- function(sql, params = NULL) {
+  # Handle RETURNING clause in INSERT statements
+  if (grepl("^INSERT INTO", sql, ignore.case = TRUE) && grepl("RETURNING", sql, ignore.case = TRUE)) {
+    # This is an INSERT...RETURNING query
+    # Execute the insert and return the ID
+    
+    if (grepl("INSERT INTO metric_entries", sql, ignore.case = TRUE)) {
+      entry_id <- .mock_data$next_entry_id
+      .mock_data$next_entry_id <- .mock_data$next_entry_id + 1L
+      
+      # Parse values
+      metric_id <- as.integer(gsub(".*VALUES \\(([0-9]+),.*", "\\1", sql))
+      entry_date <- as.Date(gsub(".*'([0-9]{4}-[0-9]{2}-[0-9]{2})'.*", "\\1", sql))
+      
+      status_match <- regmatches(sql, gregexpr("'(MET|TBD|NOT_MET)'", sql))[[1]]
+      status <- if (length(status_match) > 0) gsub("'", "", status_match[1]) else "TBD"
+      
+      new_entry <- data.frame(
+        entry_id = entry_id,
+        metric_id = metric_id,
+        entry_date = entry_date,
+        status = status,
+        value_text = NA_character_,
+        explanation_text = NA_character_,
+        is_escalated_bool = FALSE,
+        created_by = "system",
+        created_at = Sys.time(),
+        stringsAsFactors = FALSE
+      )
+      
+      .mock_data$metric_entries <- rbind(.mock_data$metric_entries, new_entry)
+      return(data.frame(entry_id = entry_id))
+    }
+  }
+  
   # Parse SQL and return mock data
   # This is a simplified parser - handles the most common queries
   
@@ -333,21 +371,82 @@ db_execute <- function(sql) {
     issue_id <- .mock_data$next_issue_id
     .mock_data$next_issue_id <- .mock_data$next_issue_id + 1L
     
-    # Extract values (simplified parsing)
+    # Extract values from SQL
+    # Parse issue_type
+    issue_type <- if (grepl("'(ACTION|ESCALATION)'", sql)) {
+      gsub(".*'(ACTION|ESCALATION)'.*", "\\1", sql)
+    } else {
+      "ACTION"
+    }
+    
+    # Parse tiers
+    tier_matches <- regmatches(sql, gregexpr("[0-9]+", sql))[[1]]
+    source_tier <- if (length(tier_matches) >= 1) as.integer(tier_matches[1]) else 1L
+    target_tier <- if (length(tier_matches) >= 2) as.integer(tier_matches[2]) else 1L
+    
+    # Parse functional_area
+    func_area <- if (grepl("functional_area, .*'([^']+)'", sql)) {
+      areas <- regmatches(sql, gregexpr("'[^']+'", sql))[[1]]
+      # Get the area (usually 4th or 5th string)
+      if (length(areas) >= 3) gsub("'", "", areas[3]) else "OPS"
+    } else {
+      "OPS"
+    }
+    
+    # Parse sqdcp_category
+    sqdcp_cat <- if (grepl("sqdcp_category.*'([^']+)'", sql)) {
+      areas <- regmatches(sql, gregexpr("'[^']+'", sql))[[1]]
+      if (length(areas) >= 4) gsub("'", "", areas[4]) else "Delivery"
+    } else {
+      "Delivery"
+    }
+    
+    # Parse description
+    desc <- if (grepl("description.*'([^']+)'", sql)) {
+      # Find all quoted strings and get the description (usually 5th)
+      strings <- regmatches(sql, gregexpr("'[^']+'", sql))[[1]]
+      if (length(strings) >= 5) gsub("'", "", strings[5]) else "Mock issue"
+    } else {
+      "Mock issue"
+    }
+    
+    # Parse owner
+    owner <- if (grepl("owner.*'([^']+)'", sql)) {
+      strings <- regmatches(sql, gregexpr("'[^']+'", sql))[[1]]
+      # Owner is typically 6th
+      if (length(strings) >= 6) gsub("'", "", strings[6]) else "system"
+    } else {
+      "system"
+    }
+    
+    # Parse due_date
+    due_date <- if (grepl("due_date.*'([0-9]{4}-[0-9]{2}-[0-9]{2})'", sql)) {
+      as.Date(gsub(".*due_date.*'([0-9]{4}-[0-9]{2}-[0-9]{2})'.*", "\\1", sql))
+    } else {
+      Sys.Date() + 7
+    }
+    
+    # Parse linked_entry_id
+    linked_entry_id <- if (grepl("linked_entry_id.*([0-9]+)[^0-9]*\\)", sql)) {
+      as.integer(gsub(".*linked_entry_id.*?([0-9]+)[^0-9]*\\).*", "\\1", sql))
+    } else {
+      NA_integer_
+    }
+    
     new_issue <- data.frame(
       issue_id = issue_id,
-      issue_type = "ACTION",
-      source_tier = 1L,
-      target_tier = 1L,
+      issue_type = issue_type,
+      source_tier = source_tier,
+      target_tier = target_tier,
       status = "OPEN",
-      functional_area = "OPS",
-      sqdcp_category = "Delivery",
-      description = "Mock issue",
-      owner = "system",
-      due_date = Sys.Date() + 7,
-      created_by = "system",
+      functional_area = func_area,
+      sqdcp_category = sqdcp_cat,
+      description = desc,
+      owner = owner,
+      due_date = due_date,
+      created_by = owner,
       created_at = Sys.time(),
-      linked_entry_id = NA_integer_,
+      linked_entry_id = linked_entry_id,
       stringsAsFactors = FALSE
     )
     

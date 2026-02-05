@@ -3,7 +3,10 @@
 # Governance layer – runs SQL migrations to create tables if they do not exist.
 # =============================================================================
 
-source("R/db.R")
+# Only source db.R if db functions are not already loaded
+if (!exists("get_db_connection", mode = "function")) {
+  source("R/db.R")
+}
 
 #' Run all SQL migration scripts found in ./sql/ (in alphabetical order).
 #' Each script is expected to be idempotent (CREATE TABLE IF NOT EXISTS).

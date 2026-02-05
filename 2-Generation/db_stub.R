@@ -1,5 +1,5 @@
 # =============================================================================
-# TierPulse – R/db_stub.R
+# TierPulse – 2-Generation/db_stub.R (symlinked from R/db_stub.R)
 # In-memory stub for ShinyApps.io deployment (no PostgreSQL)
 # Provides the same interface as db.R but uses reactive values for storage
 # =============================================================================

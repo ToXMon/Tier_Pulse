@@ -3,7 +3,10 @@
 # Governance / Generation layer – seed default metric definitions on first run.
 # =============================================================================
 
-source("R/db.R")
+# Only source db.R if db functions are not already loaded
+if (!exists("get_db_connection", mode = "function")) {
+  source("R/db.R")
+}
 
 #' Returns the default seed metrics as a data.frame.
 #' Easy to edit – just add/remove rows.

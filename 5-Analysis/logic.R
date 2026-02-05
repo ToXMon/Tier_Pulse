@@ -4,7 +4,10 @@
 # creation, promotion logic.
 # =============================================================================
 
-source("R/db.R")
+# Only source db.R if db functions are not already loaded
+if (!exists("get_db_connection", mode = "function")) {
+  source("R/db.R")
+}
 library(dplyr)
 library(lubridate)
 

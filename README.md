@@ -72,6 +72,30 @@ Rscript app.R
 
 The app will be available at `http://localhost:8888`.
 
+## ShinyApps.io Deployment (No Database Required)
+
+For quick frontend exploration without PostgreSQL:
+
+```bash
+# 1. Install packages (no PostgreSQL required)
+Rscript requirements_shinyapps.R
+
+# 2. Configure ShinyApps.io account (one-time setup)
+# Get credentials from: https://www.shinyapps.io/admin/#/tokens
+R -e "rsconnect::setAccountInfo(name='your-account', token='...', secret='...')"
+
+# 3. Deploy using automated script
+Rscript deploy_to_shinyapps.R
+```
+
+The ShinyApps.io version uses an **in-memory stub** for all database operations:
+- ✅ All UI features work (Tier 1/2 boards, input, action hub, attendance)
+- ✅ Data persists during your session
+- ⚠️ Data resets when app restarts (not production-ready)
+- ⚠️ Each user gets isolated data
+
+See **[DEPLOYMENT_SHINYAPPS.md](DEPLOYMENT_SHINYAPPS.md)** for detailed instructions.
+
 ## Domino Deployment
 
 1. **Create a Domino App** pointing to this repository.

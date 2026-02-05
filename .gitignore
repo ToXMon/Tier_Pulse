@@ -1,0 +1,25 @@
+# TierPulse – .gitignore
+
+# R / RStudio
+.Rhistory
+.Rdata
+.RData
+.Ruserdata
+*.Rproj.user/
+.Rproj.user/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.Renviron
+
+# IDE
+.vscode/
+.idea/
+
+# Artifacts
+*.pdf
+*.docx

@@ -102,6 +102,11 @@ get_seed_metrics <- function() {
 #' Seed metric_definitions table if it is empty.
 seed_metrics_if_empty <- function() {
 
+  if (db_is_stub_mode()) {
+    message("[TierPulse] Stub mode enabled – seed skipped (stub data in memory).")
+    return(invisible(TRUE))
+  }
+
   con <- get_db_connection()
   if (is.null(con)) {
     warning("[TierPulse] Cannot seed metrics – database unreachable.")

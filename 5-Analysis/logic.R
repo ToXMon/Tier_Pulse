@@ -5,9 +5,32 @@
 # Per Data Theory: Analysis code lives here, sourced by 6-Application.
 # =============================================================================
 
-# Note: db.R is sourced by ui.R before this file (Shiny working directory is 6-Application)
+source("R/db.R")
 library(dplyr)
 library(lubridate)
+
+stub_mode <- db_is_stub_mode()
+stub_env  <- get_stub_env()
+
+# Helper: join entries with metric definitions in stub mode
+stub_join_entries <- function(entries_df, tier_filter = NULL, date_filter = NULL, start_date = NULL, end_date = NULL) {
+  if (is.null(stub_env)) return(data.frame())
+  defs <- stub_env$metric_definitions
+  if (!is.null(tier_filter)) {
+    defs <- defs[defs$tier_level == tier_filter, ]
+  }
+  entries <- entries_df
+  if (!is.null(date_filter)) {
+    entries <- entries[as.character(entries$entry_date) == as.character(date_filter), ]
+  }
+  if (!is.null(start_date) && !is.null(end_date)) {
+    entries <- entries[entries$entry_date >= as.Date(start_date) & entries$entry_date <= as.Date(end_date), ]
+  }
+  merged <- merge(entries, defs, by = "metric_id", all.x = TRUE, suffixes = c("", "_md"))
+  if (nrow(merged) == 0) return(merged)
+  merged <- merged[order(merged$sqdcp_category, merged$functional_area, merged$metric_name, merged$entry_date), ]
+  merged
+}
 
 # ---------------------------------------------------------------------------
 # Metric Definitions
@@ -15,6 +38,11 @@ library(lubridate)
 
 #' Get active metric definitions for a tier level
 get_metrics_for_tier <- function(tier) {
+  if (stub_mode && !is.null(stub_env)) {
+    res <- stub_env$metric_definitions
+    res <- res[res$tier_level == tier & res$active_bool, ]
+    return(res[order(res$sqdcp_category, res$functional_area, res$metric_name), ])
+  }
   sql <- sprintf(
     "SELECT * FROM metric_definitions WHERE tier_level = %d AND active_bool = TRUE
      ORDER BY sqdcp_category, functional_area, metric_name",
@@ -25,6 +53,11 @@ get_metrics_for_tier <- function(tier) {
 
 #' Get all metric definitions
 get_all_metrics <- function() {
+  if (stub_mode && !is.null(stub_env)) {
+    return(stub_env$metric_definitions[order(stub_env$metric_definitions$tier_level,
+                                             stub_env$metric_definitions$sqdcp_category,
+                                             stub_env$metric_definitions$functional_area), ])
+  }
   db_read("SELECT * FROM metric_definitions ORDER BY tier_level, sqdcp_category, functional_area")
 }
 
@@ -34,6 +67,10 @@ get_all_metrics <- function() {
 
 #' Get entries for a given date and tier
 get_entries_for_date <- function(entry_date, tier) {
+  if (stub_mode && !is.null(stub_env)) {
+    merged <- stub_join_entries(stub_env$metric_entries, tier_filter = tier, date_filter = entry_date)
+    return(merged)
+  }
   sql <- sprintf(
     "SELECT me.*, md.metric_name, md.metric_prompt, md.sqdcp_category,
             md.functional_area, md.target_text
@@ -48,6 +85,11 @@ get_entries_for_date <- function(entry_date, tier) {
 
 #' Get entries for a date range (for rolling grids)
 get_entries_date_range <- function(start_date, end_date, tier) {
+  if (stub_mode && !is.null(stub_env)) {
+    merged <- stub_join_entries(stub_env$metric_entries, tier_filter = tier,
+                                start_date = start_date, end_date = end_date)
+    return(merged)
+  }
   sql <- sprintf(
     "SELECT me.*, md.metric_name, md.metric_prompt, md.sqdcp_category,
             md.functional_area, md.target_text
@@ -66,6 +108,72 @@ get_entries_date_range <- function(start_date, end_date, tier) {
 save_metric_entry <- function(metric_id, entry_date, status,
                               value_text = NULL, explanation_text = NULL,
                               is_escalated = FALSE, created_by = "system") {
+
+  if (stub_mode && !is.null(stub_env)) {
+    existing <- stub_env$metric_entries[
+      stub_env$metric_entries$metric_id == metric_id &
+        as.character(stub_env$metric_entries$entry_date) == as.character(entry_date),
+      , drop = FALSE
+    ]
+
+    if (nrow(existing) > 0) {
+      idx <- rownames(existing)[1]
+      row_idx <- as.integer(idx)
+      stub_env$metric_entries$status[row_idx]            <- status
+      stub_env$metric_entries$value_text[row_idx]        <- value_text
+      stub_env$metric_entries$explanation_text[row_idx]  <- explanation_text
+      stub_env$metric_entries$is_escalated_bool[row_idx] <- is_escalated
+      stub_env$metric_entries$created_by[row_idx]        <- created_by
+      entry_id <- stub_env$metric_entries$entry_id[row_idx]
+    } else {
+      entry_id <- stub_env$counters$entry_id
+      stub_env$counters$entry_id <- stub_env$counters$entry_id + 1L
+      stub_env$metric_entries <- rbind(
+        stub_env$metric_entries,
+        data.frame(
+          entry_id = entry_id,
+          metric_id = metric_id,
+          entry_date = as.Date(entry_date),
+          status = status,
+          value_text = value_text,
+          explanation_text = explanation_text,
+          is_escalated_bool = isTRUE(is_escalated),
+          created_at = Sys.time(),
+          created_by = created_by,
+          stringsAsFactors = FALSE
+        )
+      )
+    }
+
+    if (status == "NOT_MET" && !is.na(entry_id)) {
+      metric_info <- stub_env$metric_definitions[stub_env$metric_definitions$metric_id == metric_id, ]
+      if (nrow(metric_info) > 0) {
+        mi <- metric_info[1, ]
+        issue_type  <- if (isTRUE(is_escalated)) "ESCALATION" else "ACTION"
+        target_tier <- if (issue_type == "ESCALATION") mi$tier_level + 1 else mi$tier_level
+        existing_issue <- stub_env$issues[stub_env$issues$linked_entry_id == entry_id, ]
+        if (nrow(existing_issue) == 0) {
+          desc <- paste0("[", mi$functional_area, " / ", mi$sqdcp_category, "] ",
+                         mi$metric_name, " – NOT MET on ", as.character(entry_date),
+                         ". ", ifelse(is.null(explanation_text), "", explanation_text))
+          create_issue(
+            issue_type      = issue_type,
+            source_tier     = mi$tier_level,
+            target_tier     = target_tier,
+            functional_area = mi$functional_area,
+            sqdcp_category  = mi$sqdcp_category,
+            description     = desc,
+            owner           = created_by,
+            due_date        = as.character(Sys.Date() + 7),
+            created_by      = created_by,
+            linked_entry_id = entry_id
+          )
+        }
+      }
+    }
+
+    return(entry_id)
+  }
 
   # Check if entry already exists for this metric + date
   existing <- db_read(sprintf(
@@ -166,6 +274,31 @@ create_issue <- function(issue_type, source_tier, target_tier,
                          owner = NULL, due_date = NULL, created_by = "system",
                          linked_entry_id = NULL) {
 
+  if (stub_mode && !is.null(stub_env)) {
+    issue_id <- stub_env$counters$issue_id
+    stub_env$counters$issue_id <- stub_env$counters$issue_id + 1L
+    stub_env$issues <- rbind(
+      stub_env$issues,
+      data.frame(
+        issue_id = issue_id,
+        issue_type = issue_type,
+        source_tier = source_tier,
+        target_tier = target_tier,
+        status = "OPEN",
+        functional_area = functional_area,
+        sqdcp_category = sqdcp_category,
+        description = description,
+        owner = owner,
+        due_date = if (is.null(due_date) || is.na(due_date)) as.Date(NA) else as.Date(due_date),
+        created_at = Sys.time(),
+        created_by = created_by,
+        linked_entry_id = if (is.null(linked_entry_id)) NA_integer_ else linked_entry_id,
+        stringsAsFactors = FALSE
+      )
+    )
+    return(invisible(TRUE))
+  }
+
   sql <- sprintf(
     "INSERT INTO issues (issue_type, source_tier, target_tier, status,
        functional_area, sqdcp_category, description, owner, due_date,
@@ -189,6 +322,26 @@ create_issue <- function(issue_type, source_tier, target_tier,
 get_issues <- function(status_filter = NULL, type_filter = NULL,
                        tier_filter = NULL, target_tier_filter = NULL,
                        area_filter = NULL) {
+  if (stub_mode && !is.null(stub_env)) {
+    issues <- stub_env$issues
+    if (!is.null(status_filter) && status_filter != "All") {
+      issues <- issues[issues$status == status_filter, ]
+    }
+    if (!is.null(type_filter) && type_filter != "All") {
+      issues <- issues[issues$issue_type == type_filter, ]
+    }
+    if (!is.null(tier_filter) && tier_filter != "All") {
+      issues <- issues[issues$source_tier == tier_filter, ]
+    }
+    if (!is.null(target_tier_filter)) {
+      issues <- issues[issues$target_tier == target_tier_filter, ]
+    }
+    if (!is.null(area_filter) && area_filter != "All") {
+      issues <- issues[issues$functional_area == area_filter, ]
+    }
+    issues <- issues[order(issues$created_at, decreasing = TRUE), ]
+    return(issues)
+  }
   where_clauses <- c()
 
   if (!is.null(status_filter) && status_filter != "All") {
@@ -222,6 +375,11 @@ get_issues <- function(status_filter = NULL, type_filter = NULL,
 
 #' Get open issues for a target tier
 get_open_issues_for_tier <- function(target_tier) {
+  if (stub_mode && !is.null(stub_env)) {
+    issues <- stub_env$issues
+    issues <- issues[issues$target_tier == target_tier & issues$status %in% c("OPEN", "IN_PROGRESS"), ]
+    return(issues[order(issues$created_at, decreasing = TRUE), ])
+  }
   sql <- sprintf(
     "SELECT * FROM issues WHERE target_tier = %d AND status IN ('OPEN', 'IN_PROGRESS')
      ORDER BY created_at DESC",
@@ -232,6 +390,14 @@ get_open_issues_for_tier <- function(target_tier) {
 
 #' Promote an ACTION to an ESCALATION – increments target_tier
 promote_to_escalation <- function(issue_id) {
+  if (stub_mode && !is.null(stub_env)) {
+    idx <- which(stub_env$issues$issue_id == issue_id & stub_env$issues$issue_type == "ACTION")
+    if (length(idx) > 0) {
+      stub_env$issues$issue_type[idx] <- "ESCALATION"
+      stub_env$issues$target_tier[idx] <- stub_env$issues$target_tier[idx] + 1L
+    }
+    return(invisible(TRUE))
+  }
   sql <- sprintf(
     "UPDATE issues SET issue_type = 'ESCALATION', target_tier = target_tier + 1
      WHERE issue_id = %d AND issue_type = 'ACTION'",
@@ -242,6 +408,13 @@ promote_to_escalation <- function(issue_id) {
 
 #' Update issue status
 update_issue_status <- function(issue_id, new_status) {
+  if (stub_mode && !is.null(stub_env)) {
+    idx <- which(stub_env$issues$issue_id == issue_id)
+    if (length(idx) > 0) {
+      stub_env$issues$status[idx] <- new_status
+    }
+    return(invisible(TRUE))
+  }
   sql <- sprintf(
     "UPDATE issues SET status = %s WHERE issue_id = %d",
     sql_quote(new_status), as.integer(issue_id)
@@ -255,6 +428,10 @@ update_issue_status <- function(issue_id, new_status) {
 
 #' Count of NOT_MET entries for today
 count_not_met_today <- function() {
+  if (stub_mode && !is.null(stub_env)) {
+    today <- Sys.Date()
+    return(sum(stub_env$metric_entries$entry_date == today & stub_env$metric_entries$status == "NOT_MET"))
+  }
   sql <- sprintf(
     "SELECT COUNT(*) AS n FROM metric_entries WHERE entry_date = '%s' AND status = 'NOT_MET'",
     as.character(Sys.Date())
@@ -265,12 +442,19 @@ count_not_met_today <- function() {
 
 #' Count of open issues
 count_open_issues <- function() {
+  if (stub_mode && !is.null(stub_env)) {
+    return(sum(stub_env$issues$status %in% c("OPEN", "IN_PROGRESS")))
+  }
   result <- db_read("SELECT COUNT(*) AS n FROM issues WHERE status IN ('OPEN', 'IN_PROGRESS')")
   if (nrow(result) > 0) result$n[1] else 0
 }
 
 #' Count of overdue issues
 count_overdue_issues <- function() {
+  if (stub_mode && !is.null(stub_env)) {
+    today <- Sys.Date()
+    return(sum(stub_env$issues$status %in% c("OPEN", "IN_PROGRESS") & !is.na(stub_env$issues$due_date) & stub_env$issues$due_date < today))
+  }
   sql <- sprintf(
     "SELECT COUNT(*) AS n FROM issues
      WHERE status IN ('OPEN', 'IN_PROGRESS') AND due_date < '%s'",
@@ -282,6 +466,11 @@ count_overdue_issues <- function() {
 
 #' Latest N issues
 get_latest_issues <- function(n = 5) {
+  if (stub_mode && !is.null(stub_env)) {
+    issues <- stub_env$issues[order(stub_env$issues$created_at, decreasing = TRUE), ]
+    if (nrow(issues) == 0) return(issues)
+    return(utils::head(issues, n))
+  }
   sql <- sprintf("SELECT * FROM issues ORDER BY created_at DESC LIMIT %d", as.integer(n))
   db_read(sql)
 }
@@ -293,6 +482,24 @@ get_latest_issues <- function(n = 5) {
 #' Save attendance record
 save_attendance <- function(tier_level, meeting_date, functional_area,
                             person_name, present_bool, notes = NULL) {
+  if (stub_mode && !is.null(stub_env)) {
+    attendance_id <- stub_env$counters$attendance_id
+    stub_env$counters$attendance_id <- stub_env$counters$attendance_id + 1L
+    stub_env$attendance <- rbind(
+      stub_env$attendance,
+      data.frame(
+        attendance_id = attendance_id,
+        tier_level = tier_level,
+        meeting_date = as.Date(meeting_date),
+        functional_area = functional_area,
+        person_name = person_name,
+        present_bool = isTRUE(present_bool),
+        notes = notes,
+        stringsAsFactors = FALSE
+      )
+    )
+    return(invisible(TRUE))
+  }
   sql <- sprintf(
     "INSERT INTO attendance (tier_level, meeting_date, functional_area, person_name, present_bool, notes)
      VALUES (%d, '%s', %s, %s, %s, %s)",
@@ -308,6 +515,11 @@ save_attendance <- function(tier_level, meeting_date, functional_area,
 
 #' Get attendance for a meeting
 get_attendance <- function(tier_level, meeting_date) {
+  if (stub_mode && !is.null(stub_env)) {
+    att <- stub_env$attendance
+    att <- att[att$tier_level == tier_level & att$meeting_date == as.Date(meeting_date), ]
+    return(att[order(att$functional_area, att$person_name), ])
+  }
   sql <- sprintf(
     "SELECT * FROM attendance WHERE tier_level = %d AND meeting_date = '%s'
      ORDER BY functional_area, person_name",
@@ -323,6 +535,24 @@ get_attendance <- function(tier_level, meeting_date) {
 #' Save meeting record
 save_meeting <- function(tier_level, meeting_date, scheduled_start_time = NULL,
                          timebox_minutes = 8, facilitator_name = NULL) {
+  if (stub_mode && !is.null(stub_env)) {
+    meeting_id <- stub_env$counters$meeting_id
+    stub_env$counters$meeting_id <- stub_env$counters$meeting_id + 1L
+    stub_env$meetings <- rbind(
+      stub_env$meetings,
+      data.frame(
+        meeting_id = meeting_id,
+        tier_level = tier_level,
+        meeting_date = as.Date(meeting_date),
+        scheduled_start_time = if (is.null(scheduled_start_time)) as.POSIXct(NA) else as.POSIXct(scheduled_start_time),
+        timebox_minutes = timebox_minutes,
+        facilitator_name = facilitator_name,
+        created_at = Sys.time(),
+        stringsAsFactors = FALSE
+      )
+    )
+    return(invisible(TRUE))
+  }
   sql <- sprintf(
     "INSERT INTO meetings (tier_level, meeting_date, scheduled_start_time, timebox_minutes, facilitator_name)
      VALUES (%d, '%s', %s, %d, %s)",

@@ -9,6 +9,11 @@ source("R/db.R")
 #' Each script is expected to be idempotent (CREATE TABLE IF NOT EXISTS).
 run_migrations <- function() {
 
+  if (db_is_stub_mode()) {
+    message("[TierPulse] Stub mode enabled – skipping migrations.")
+    return(invisible(FALSE))
+  }
+
   sql_dir <- file.path("sql")
   if (!dir.exists(sql_dir)) {
     message("[TierPulse] sql/ directory not found – skipping migrations.")

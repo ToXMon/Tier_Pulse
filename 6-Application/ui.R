@@ -1,6 +1,7 @@
 # =============================================================================
 # TierPulse – ui.R
-# Application layer – Main UI definition
+# Application layer – Main UI definition (orchestrator per Data Theory)
+# Sources analysis modules from 5-Analysis per repository structure guidance.
 # Uses bslib for lightweight Bootstrap 5 styling with navbar layout.
 # =============================================================================
 
@@ -8,14 +9,17 @@ library(shiny)
 library(bslib)
 library(DT)
 
-# Source modules and logic to get constants
-source("R/logic.R")
-source("R/modules/mod_board_tier1.R")
-source("R/modules/mod_input_tier1.R")
-source("R/modules/mod_board_tier2.R")
-source("R/modules/mod_input_tier2.R")
-source("R/modules/mod_action_hub.R")
-source("R/modules/mod_attendance.R")
+# Source database layer first (from R/ for Shiny working directory compatibility)
+source("R/db.R")
+
+# Source analysis logic and modules from 5-Analysis (per Data Theory structure)
+source("../5-Analysis/logic.R")
+source("../5-Analysis/modules/mod_board_tier1.R")
+source("../5-Analysis/modules/mod_input_tier1.R")
+source("../5-Analysis/modules/mod_board_tier2.R")
+source("../5-Analysis/modules/mod_input_tier2.R")
+source("../5-Analysis/modules/mod_action_hub.R")
+source("../5-Analysis/modules/mod_attendance.R")
 
 # ---------------------------------------------------------------------------
 # UI Definition

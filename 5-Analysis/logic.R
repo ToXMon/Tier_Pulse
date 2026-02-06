@@ -1,10 +1,11 @@
 # =============================================================================
-# TierPulse – R/logic.R
-# Aggregation / Analysis layer – core business rules, queries, forced issue
+# TierPulse – 5-Analysis/logic.R
+# Analysis layer – core business rules, queries, forced issue
 # creation, promotion logic.
+# Per Data Theory: Analysis code lives here, sourced by 6-Application.
 # =============================================================================
 
-source("R/db.R")
+# Note: db.R is sourced by ui.R before this file (Shiny working directory is 6-Application)
 library(dplyr)
 library(lubridate)
 

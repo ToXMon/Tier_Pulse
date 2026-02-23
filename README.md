@@ -72,6 +72,16 @@ Rscript app.R
 
 The app will be available at `http://localhost:8888`.
 
+## Akash Deployment
+
+Akash deployment assets are provided in `6-Application/`:
+
+- `Dockerfile` (container image build)
+- `akash.sdl.yaml` (Akash SDL manifest)
+- `AKASH_DEPLOYMENT.md` (CLI deployment walkthrough)
+
+Use explicit image tags when publishing containers for Akash.
+
 ## Domino Deployment
 
 1. **Create a Domino App** pointing to this repository.

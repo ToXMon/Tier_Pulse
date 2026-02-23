@@ -1,0 +1,39 @@
+version: "2.0"
+
+services:
+  tierpulse:
+    image: ghcr.io/toxmon/tier_pulse:akash-v1
+    env:
+      - POSTGRES_HOST=<set-postgres-host>
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=tierpulse
+      - POSTGRES_USER=<set-postgres-user>
+      - POSTGRES_PASSWORD=<set-postgres-password>
+    expose:
+      - port: 8888
+        as: 80
+        to:
+          - global: true
+
+profiles:
+  compute:
+    tierpulse:
+      resources:
+        cpu:
+          units: 1
+        memory:
+          size: 1Gi
+        storage:
+          size: 2Gi
+  placement:
+    dcloud:
+      pricing:
+        tierpulse:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  tierpulse:
+    dcloud:
+      profile: tierpulse
+      count: 1

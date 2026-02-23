@@ -2,7 +2,7 @@ version: "2.0"
 
 services:
   tierpulse:
-    image: ghcr.io/toxmon/tier_pulse:akash-v1
+    image: docker.io/wijnaldum/tier_pulse:akash-v1
     env:
       - POSTGRES_HOST=<set-postgres-host>
       - POSTGRES_PORT=5432

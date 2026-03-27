@@ -1,15 +1,13 @@
-FROM rocker/r-ver:4.3.3
+FROM rocker/shiny:4.3.3
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
-    libssl-dev \
-    libcurl4-openssl-dev \
-    libxml2-dev \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN R -q -e "install.packages(c('shiny','bslib','DT','DBI','RPostgreSQL','lubridate','dplyr'), repos='https://cloud.r-project.org')"
+RUN R -q -e "install.packages(c('RPostgreSQL'), repos='https://cloud.r-project.org')"
 
 WORKDIR /app
 COPY 6-Application/ /app/

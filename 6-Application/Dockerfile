@@ -11,6 +11,7 @@ RUN R -q -e "install.packages(c('DT','dplyr','lubridate','RPostgreSQL'), repos='
 
 WORKDIR /app
 COPY 6-Application/ /app/
+COPY 5-Analysis/ /app/5-Analysis/
 
 EXPOSE 8888
 

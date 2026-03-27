@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN R -q -e "install.packages(c('RPostgreSQL'), repos='https://cloud.r-project.org')"
+RUN R -q -e "install.packages(c('DT','dplyr','lubridate','RPostgreSQL'), repos='https://cloud.r-project.org')"
 
 WORKDIR /app
 COPY 6-Application/ /app/

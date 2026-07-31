@@ -1,14 +1,11 @@
+---
 version: "2.0"
 
 services:
   tierpulse:
-    image: docker.io/wijnaldum/tier_pulse:akash-v1
+    image: ghcr.io/toxmon/tier-pulse:b125092
     env:
-      - POSTGRES_HOST=<set-postgres-host>
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=tierpulse
-      - POSTGRES_USER=<set-postgres-user>
-      - POSTGRES_PASSWORD=<set-postgres-password>
+      - TIERPULSE_STUB_DB=1
     expose:
       - port: 8888
         as: 80
@@ -20,20 +17,21 @@ profiles:
     tierpulse:
       resources:
         cpu:
-          units: 1
+          units: 0.5
         memory:
-          size: 1Gi
+          size: 512Mi
         storage:
-          size: 2Gi
+          size: 1Gi
+
   placement:
-    dcloud:
+    akash:
       pricing:
         tierpulse:
-          denom: uakt
-          amount: 10000
+          denom: uact
+          amount: 1000
 
 deployment:
   tierpulse:
-    dcloud:
+    akash:
       profile: tierpulse
       count: 1

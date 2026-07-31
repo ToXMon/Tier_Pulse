@@ -22,3 +22,4 @@ COPY 5-Analysis/ /5-Analysis/
 EXPOSE 8888
 
 CMD ["Rscript", "app.R"]
+# rebuild trigger: GHCR login timeout retry
